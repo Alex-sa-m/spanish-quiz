@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Espagnol A2 — 500 mots</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: #f4f4f5;
+      color: #18181b;
+      display: flex;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    #app {
+      width: 100%;
+      max-width: 640px;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      background: #fff;
+      border-left: 1px solid #e4e4e7;
+      border-right: 1px solid #e4e4e7;
+    }
+    header {
+      padding: 12px 16px;
+      border-bottom: 1px solid #e4e4e7;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 600;
+    }
+    #progress { font-weight: 400; color: #71717a; font-size: 0.9rem; }
+    #chat {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .msg {
+      max-width: 80%;
+      padding: 10px 14px;
+      border-radius: 16px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+    }
+    .bot { align-self: flex-start; background: #f4f4f5; border-bottom-left-radius: 4px; }
+    .user { align-self: flex-end; background: #2563eb; color: #fff; border-bottom-right-radius: 4px; }
+    .ok { align-self: flex-start; background: #dcfce7; color: #166534; border-bottom-left-radius: 4px; }
+    .ko { align-self: flex-start; background: #fee2e2; color: #991b1b; border-bottom-left-radius: 4px; }
+    #composer {
+      display: flex;
+      gap: 8px;
+      padding: 12px 16px;
+      border-top: 1px solid #e4e4e7;
+    }
+    #answer {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid #d4d4d8;
+      border-radius: 999px;
+      font-size: 1rem;
+      outline: none;
+    }
+    #answer:focus { border-color: #2563eb; }
+    button {
+      padding: 10px 18px;
+      border: none;
+      border-radius: 999px;
+      background: #2563eb;
+      color: #fff;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    button:disabled { background: #a1a1aa; cursor: default; }
+    #nextBtn { display: none; background: #16a34a; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <span>Espagnol A2 — 500 mots courants</span>
+      <span id="progress"></span>
+    </header>
+    <div id="chat"></div>
+    <div id="composer">
+      <input id="answer" type="text" placeholder="Tape le mot en espagnol…" autocomplete="off" autofocus />
+      <button id="checkBtn">Vérifier</button>
+      <button id="nextBtn">Suivant →</button>
+    </div>
+  </div>
+
+  <script>
+    const chat = document.getElementById("chat");
+    const input = document.getElementById("answer");
+    const checkBtn = document.getElementById("checkBtn");
+    const nextBtn = document.getElementById("nextBtn");
+    const progress = document.getElementById("progress");
+
+    let words = [];
+    let index = 0;
+    let score = 0;
+    let locked = false;
+
+    function addMsg(text, cls) {
+      const div = document.createElement("div");
+      div.className = "msg " + cls;
+      div.textContent = text;
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    function updateProgress() {
+      progress.textContent = `Mot ${Math.min(index + 1, words.length)}/${words.length} — Score : ${score}`;
+    }
+
+    function shuffle(arr) {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    function showWord() {
+      locked = false;
+      checkBtn.style.display = "";
+      nextBtn.style.display = "none";
+      input.disabled = false;
+      input.value = "";
+      input.focus();
+      const w = words[index];
+      addMsg(`🇫🇷 « ${w.fr} »\n→ traduis en espagnol :`, "bot");
+      updateProgress();
+    }
+
+    async function check() {
+      if (locked || !words.length) return;
+      const answer = input.value;
+      if (!answer.trim()) return;
+      locked = true;
+      input.disabled = true;
+      checkBtn.style.display = "none";
+      addMsg(answer, "user");
+      try {
+        const res = await fetch("/api/check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ es: words[index].es, answer }),
+        });
+        const data = await res.json();
+        if (data.correct) {
+          score++;
+          addMsg("✅ Correct !", "ok");
+        } else {
+          addMsg(`❌ Non… la bonne réponse était « ${data.expected} »`, "ko");
+        }
+      } catch {
+        addMsg("❌ Erreur réseau, réessaie.", "ko");
+        locked = false;
+        input.disabled = false;
+        checkBtn.style.display = "";
+        return;
+      }
+      nextBtn.style.display = "";
+      nextBtn.focus();
+      updateProgress();
+    }
+
+    function next() {
+      if (index < words.length - 1) {
+        index++;
+        showWord();
+      } else {
+        addMsg(`🎉 Terminé ! Score final : ${score}/${words.length}`, "bot");
+        input.disabled = true;
+        checkBtn.style.display = "none";
+        nextBtn.style.display = "none";
+        updateProgress();
+      }
+    }
+
+    checkBtn.addEventListener("click", check);
+    nextBtn.addEventListener("click", next);
+    input.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      if (locked) next();
+      else check();
+    });
+
+    (async () => {
+      addMsg("Chargement des 500 mots via l'API Mistral…", "bot");
+      try {
+        const res = await fetch("/api/words");
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        words = shuffle(data.words);
+        chat.innerHTML = "";
+        addMsg("Bienvenue ! Je te montre un mot en français, tu l'écris en espagnol (les accents sont ignorés).", "bot");
+        showWord();
+      } catch (err) {
+        chat.innerHTML = "";
+        addMsg("⚠️ " + err.message, "ko");
+      }
+    })();
+  </script>
+</body>
+</html>
